@@ -14,16 +14,19 @@
   var CPU_X = WIDTH - PADDLE_MARGIN - PADDLE_W;
 
   var KEYBOARD_SPEED = 520;
-  var CPU_MAX_SPEED = 300;
-  var CPU_ERROR_RANGE = 46;
-  var CPU_ERROR_INTERVAL = 0.7;
+
+  var DIFFICULTIES = {
+    facil: { maxSpeed: 210, errorRange: 95, errorInterval: 0.9 },
+    normal: { maxSpeed: 270, errorRange: 60, errorInterval: 0.7 },
+    dificil: { maxSpeed: 330, errorRange: 38, errorInterval: 0.55 }
+  };
+  var currentDifficulty = 'normal';
 
   var MAX_BOUNCE_ANGLE = 55 * Math.PI / 180;
   var PADDLE_HIT_SPEEDUP = 1.03;
   var BASE_BALL_SPEED = 380;
 
-  var WIN_SCORE = 11;
-  var WIN_MARGIN = 2;
+  var WIN_SCORE = 5;
 
   var FIRE_BALL_CHANCE = 0.18;
   var FIRE_SPEED_MULT = 1.6;
@@ -33,6 +36,12 @@
   var STREAK_RESET_AT = 5;
   var AURA_SPEED_MULT = 1.25;
   var STREAK_DOTS = 5;
+
+  var RALLY_BOOST_TIME = 20;
+  var RALLY_BOOST_MULT = 1.3;
+
+  var OVAL_SPIN_RATE = 0.09;
+  var OVAL_WALL_CHAOS = 32 * Math.PI / 180;
 
   var BALL_VARIANTS = [
     {
@@ -49,17 +58,32 @@
     },
     {
       key: 'ovalada', name: 'Ovalada', icon: '⬮',
-      rx: 15, ry: 7, speedMult: 1.08, angleNoise: 8 * Math.PI / 180, color: '#c792ea'
+      rx: 15, ry: 7, speedMult: 1.08, angleNoise: 24 * Math.PI / 180, color: '#c792ea'
     }
   ];
 
   var playerScoreEl = document.getElementById('player-score');
   var cpuScoreEl = document.getElementById('cpu-score');
+  var playerScoreDotsEl = document.getElementById('player-score-dots');
+  var cpuScoreDotsEl = document.getElementById('cpu-score-dots');
   var ballIconEl = document.getElementById('ball-icon');
   var ballNameEl = document.getElementById('ball-name');
   var ballIndicatorEl = document.getElementById('ball-indicator');
+  var rallyTimerEl = document.getElementById('rally-timer');
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
+  var difficultyBtns = document.querySelectorAll('.difficulty-btn');
+
+  difficultyBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentDifficulty = btn.getAttribute('data-difficulty');
+      difficultyBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+    });
+  });
+
+  function updateRallyTimer() {
+    rallyTimerEl.textContent = '⏱ ' + Math.floor(state.rallyTime) + 's';
+  }
 
   function showToast(text) {
     toastEl.textContent = text;
@@ -93,7 +117,8 @@
       errorTimer: 0
     },
     ball: null,
-    elapsed: 0
+    elapsed: 0,
+    rallyTime: 0
   };
 
   // ---- Input ----
@@ -135,15 +160,16 @@
   // ---- CPU AI ----
   function updateCpuPaddle(dt) {
     var cpu = state.cpu;
+    var diff = DIFFICULTIES[currentDifficulty] || DIFFICULTIES.normal;
     cpu.errorTimer -= dt;
     if (cpu.errorTimer <= 0) {
-      cpu.errorTimer = CPU_ERROR_INTERVAL;
-      cpu.targetError = (Math.random() * 2 - 1) * CPU_ERROR_RANGE;
+      cpu.errorTimer = diff.errorInterval;
+      cpu.targetError = (Math.random() * 2 - 1) * diff.errorRange;
     }
     var target = state.ball.y + cpu.targetError - PADDLE_H / 2;
-    var diff = target - cpu.y;
-    var maxStep = CPU_MAX_SPEED * dt;
-    var step = clamp(diff, -maxStep, maxStep);
+    var delta = target - cpu.y;
+    var maxStep = diff.maxSpeed * dt;
+    var step = clamp(delta, -maxStep, maxStep);
     cpu.y = clamp(cpu.y + step, 0, HEIGHT - PADDLE_H);
   }
 
@@ -170,6 +196,8 @@
       variant: variant,
       fire: fire,
       trail: [],
+      spinAngle: 0,
+      boosted: false,
       vx: Math.cos(angle) * speed * direction,
       vy: Math.sin(angle) * speed
     };
@@ -181,6 +209,9 @@
     var fire = Math.random() < FIRE_BALL_CHANCE;
     updateBallIndicator(variant, fire);
     state.ball = makeBall(direction, variant, fire);
+    state.rallyTime = 0;
+    rallyTimerEl.classList.remove('boost');
+    updateRallyTimer();
   }
 
   function paddleBounce(ball, paddle, paddleX, side, incomingVx, incomingVy) {
@@ -193,6 +224,7 @@
     if (variant.key === 'ovalada') {
       var ratio = clamp(incomingVy / Math.max(Math.abs(incomingVx), 1), -2.5, 2.5);
       angle += ratio * 0.18;
+      angle += Math.sin(ball.spinAngle) * 0.3;
     }
     if (variant.angleNoise > 0) {
       angle += (Math.random() * 2 - 1) * variant.angleNoise;
@@ -240,14 +272,38 @@
       if (ball.trail.length > FIRE_TRAIL_LENGTH) ball.trail.length = FIRE_TRAIL_LENGTH;
     }
 
+    if (ball.variant && ball.variant.key === 'ovalada') {
+      ball.spinAngle += Math.hypot(ball.vx, ball.vy) * OVAL_SPIN_RATE * dt;
+    }
+
     // Top / bottom walls
+    var hitWall = false;
     if (ball.y - ball.ry < 0) {
       ball.y = ball.ry;
       ball.vy = Math.abs(ball.vy);
+      hitWall = true;
     } else if (ball.y + ball.ry > HEIGHT) {
       ball.y = HEIGHT - ball.ry;
       ball.vy = -Math.abs(ball.vy);
+      hitWall = true;
     }
+
+    if (hitWall && ball.variant && ball.variant.key === 'ovalada') {
+      var wallSpeed = Math.hypot(ball.vx, ball.vy);
+      var wallAngle = Math.atan2(ball.vy, ball.vx) + (Math.random() * 2 - 1) * OVAL_WALL_CHAOS;
+      ball.vx = Math.cos(wallAngle) * wallSpeed;
+      ball.vy = Math.sin(wallAngle) * wallSpeed;
+    }
+
+    state.rallyTime += dt;
+    if (!ball.boosted && state.rallyTime >= RALLY_BOOST_TIME) {
+      ball.boosted = true;
+      ball.vx *= RALLY_BOOST_MULT;
+      ball.vy *= RALLY_BOOST_MULT;
+      rallyTimerEl.classList.add('boost');
+      showToast('¡MÁS VELOCIDAD!');
+    }
+    updateRallyTimer();
 
     var incomingVx = ball.vx;
     var incomingVy = ball.vy;
@@ -297,13 +353,11 @@
   }
 
   function checkWin() {
-    var p = state.player.score;
-    var c = state.cpu.score;
-    if (p >= WIN_SCORE && p - c >= WIN_MARGIN) {
+    if (state.player.score >= WIN_SCORE) {
       endGame('player');
       return true;
     }
-    if (c >= WIN_SCORE && c - p >= WIN_MARGIN) {
+    if (state.cpu.score >= WIN_SCORE) {
       endGame('cpu');
       return true;
     }
@@ -319,9 +373,21 @@
     el.classList.add('pop');
   }
 
+  function renderScoreDots(el, score, sideClass) {
+    el.innerHTML = '';
+    var count = Math.min(score, WIN_SCORE);
+    for (var i = 0; i < WIN_SCORE; i++) {
+      var dot = document.createElement('span');
+      dot.className = 'score-dot' + (i < count ? ' filled ' + sideClass : '');
+      el.appendChild(dot);
+    }
+  }
+
   function updateScoreboard() {
     popScore(playerScoreEl, state.player.score);
     popScore(cpuScoreEl, state.cpu.score);
+    renderScoreDots(playerScoreDotsEl, state.player.score, 'player-fill');
+    renderScoreDots(cpuScoreDotsEl, state.cpu.score, 'cpu-fill');
   }
 
   // ---- Screens / flow ----
@@ -348,8 +414,14 @@
     endScreen.classList.remove('hidden');
   }
 
+  function showStartScreen() {
+    state.screen = 'start';
+    endScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  }
+
   startBtn.addEventListener('click', startGame);
-  restartBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', showStartScreen);
 
   // ---- Rendering ----
   function drawCourt() {
@@ -404,8 +476,9 @@
     } else {
       ctx.fillStyle = ball.variant ? ball.variant.color : '#f2f2f7';
     }
+    var rotation = (ball.variant && ball.variant.key === 'ovalada') ? ball.spinAngle : 0;
     ctx.beginPath();
-    ctx.ellipse(ball.x, ball.y, ball.rx, ball.ry, 0, 0, Math.PI * 2);
+    ctx.ellipse(ball.x, ball.y, ball.rx, ball.ry, rotation, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }

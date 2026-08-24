@@ -29,7 +29,7 @@ body {
 #game-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   width: 100%;
   max-width: 800px;
 }
@@ -79,6 +79,39 @@ body {
   animation: score-pop 0.3s ease-out;
 }
 
+.score-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.score-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.score-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.score-dot.filled.player-fill {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+}
+
+.score-dot.filled.cpu-fill {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 5px var(--accent-2);
+}
+
 .streak {
   display: flex;
   gap: 4px;
@@ -103,6 +136,13 @@ body {
   box-shadow: 0 0 6px var(--accent-2);
 }
 
+#hud-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 #ball-indicator {
   display: flex;
   align-items: center;
@@ -111,6 +151,25 @@ body {
   color: var(--dim);
   min-width: 110px;
   justify-content: center;
+}
+
+#rally-timer {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  letter-spacing: 1px;
+  transition: color 0.2s;
+}
+
+#rally-timer.boost {
+  color: #ffb347;
+  text-shadow: 0 0 8px rgba(255, 140, 20, 0.7);
+  animation: rally-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes rally-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 #ball-icon {
@@ -172,7 +231,49 @@ body {
   color: #d0d0dc;
 }
 
-.overlay button {
+#difficulty-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.difficulty-label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--dim);
+}
+
+.difficulty-options {
+  display: flex;
+  gap: 8px;
+}
+
+.difficulty-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #d0d0dc;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.difficulty-btn:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.difficulty-btn.active {
+  color: #05050a;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(74, 214, 255, 0.5);
+}
+
+.overlay button:not(.difficulty-btn) {
   margin-top: 8px;
   padding: 12px 32px;
   font-size: 16px;
@@ -186,7 +287,7 @@ body {
   transition: transform 0.1s, box-shadow 0.15s;
 }
 
-.overlay button:hover {
+.overlay button:not(.difficulty-btn):hover {
   box-shadow: 0 0 18px rgba(74, 214, 255, 0.6);
   transform: translateY(-1px);
 }
@@ -230,5 +331,18 @@ body {
 
   #ball-indicator {
     min-width: 0;
+  }
+
+  #rally-timer {
+    font-size: 10px;
+  }
+
+  .difficulty-options {
+    gap: 6px;
+  }
+
+  .difficulty-btn {
+    padding: 7px 12px;
+    font-size: 12px;
   }
 }
