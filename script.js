@@ -25,6 +25,10 @@
   var WIN_SCORE = 11;
   var WIN_MARGIN = 2;
 
+  var FIRE_BALL_CHANCE = 0.18;
+  var FIRE_SPEED_MULT = 1.6;
+  var FIRE_TRAIL_LENGTH = 14;
+
   var BALL_VARIANTS = [
     {
       key: 'normal', name: 'Normal', icon: '●',
@@ -48,6 +52,18 @@
   var cpuScoreEl = document.getElementById('cpu-score');
   var ballIconEl = document.getElementById('ball-icon');
   var ballNameEl = document.getElementById('ball-name');
+  var ballIndicatorEl = document.getElementById('ball-indicator');
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
+
+  function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove('show');
+    }, 1600);
+  }
   var startScreen = document.getElementById('start-screen');
   var endScreen = document.getElementById('end-screen');
   var endTitle = document.getElementById('end-title');
@@ -127,21 +143,24 @@
     return BALL_VARIANTS[Math.floor(Math.random() * BALL_VARIANTS.length)];
   }
 
-  function updateBallIndicator(variant) {
-    ballIconEl.textContent = variant.icon;
-    ballIconEl.style.color = variant.color;
+  function updateBallIndicator(variant, fire) {
+    ballIconEl.textContent = variant.icon + (fire ? ' 🔥' : '');
+    ballIconEl.style.color = fire ? '#ffb347' : variant.color;
     ballNameEl.textContent = variant.name;
+    ballIndicatorEl.classList.toggle('fire', fire);
   }
 
-  function makeBall(direction, variant) {
+  function makeBall(direction, variant, fire) {
     var angle = (Math.random() * 0.6 - 0.3);
-    var speed = BASE_BALL_SPEED * variant.speedMult;
+    var speed = BASE_BALL_SPEED * variant.speedMult * (fire ? FIRE_SPEED_MULT : 1);
     return {
       x: WIDTH / 2,
       y: HEIGHT / 2,
       rx: variant.rx,
       ry: variant.ry,
       variant: variant,
+      fire: fire,
+      trail: [],
       vx: Math.cos(angle) * speed * direction,
       vy: Math.sin(angle) * speed
     };
@@ -150,8 +169,9 @@
   function resetBall() {
     var direction = Math.random() < 0.5 ? -1 : 1;
     var variant = pickVariant();
-    updateBallIndicator(variant);
-    state.ball = makeBall(direction, variant);
+    var fire = Math.random() < FIRE_BALL_CHANCE;
+    updateBallIndicator(variant, fire);
+    state.ball = makeBall(direction, variant, fire);
   }
 
   function paddleBounce(ball, paddle, paddleX, side, incomingVx, incomingVy) {
@@ -205,6 +225,11 @@
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
 
+    if (ball.fire) {
+      ball.trail.unshift({ x: ball.x, y: ball.y });
+      if (ball.trail.length > FIRE_TRAIL_LENGTH) ball.trail.length = FIRE_TRAIL_LENGTH;
+    }
+
     // Top / bottom walls
     if (ball.y - ball.ry < 0) {
       ball.y = ball.ry;
@@ -231,8 +256,10 @@
   }
 
   function awardPoint(who) {
-    state[who].score += 1;
+    var wasFire = !!(state.ball && state.ball.fire);
+    state[who].score += wasFire ? 2 : 1;
     updateScoreboard();
+    if (wasFire) showToast('¡PUNTO DOBLE!');
 
     if (checkWin()) return;
     resetBall();
@@ -301,11 +328,36 @@
     ctx.fillRect(x, y, PADDLE_W, PADDLE_H);
   }
 
+  function drawFireTrail(ball) {
+    var n = ball.trail.length;
+    for (var i = n - 1; i >= 0; i--) {
+      var p = ball.trail[i];
+      var frac = 1 - i / n;
+      var r = Math.max(ball.rx, ball.ry) * (0.25 + 0.7 * frac);
+      ctx.globalAlpha = frac * 0.45;
+      ctx.fillStyle = '#ff7a33';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, r, r, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawBall(ball) {
-    ctx.fillStyle = ball.variant ? ball.variant.color : '#f2f2f7';
+    if (ball.fire && ball.trail.length) drawFireTrail(ball);
+
+    ctx.save();
+    if (ball.fire) {
+      ctx.shadowColor = '#ff6a2f';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ffb347';
+    } else {
+      ctx.fillStyle = ball.variant ? ball.variant.color : '#f2f2f7';
+    }
     ctx.beginPath();
     ctx.ellipse(ball.x, ball.y, ball.rx, ball.ry, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   function render() {
