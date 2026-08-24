@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pong</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <div id="hud">
+      <div class="side player-side">
+        <span class="label">JUGADOR</span>
+        <span id="player-score" class="score">0</span>
+        <div id="player-streak" class="streak"></div>
+      </div>
+      <div id="ball-indicator">
+        <span id="ball-icon">●</span>
+        <span id="ball-name">Normal</span>
+      </div>
+      <div class="side cpu-side">
+        <div id="cpu-streak" class="streak"></div>
+        <span id="cpu-score" class="score">0</span>
+        <span class="label">CPU</span>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="game" width="800" height="500"></canvas>
+      <div id="toast"></div>
+
+      <div id="start-screen" class="overlay">
+        <h1>PONG</h1>
+        <p>Movés tu paleta con el <strong>mouse</strong> o con las flechas <strong>▲ ▼</strong>.</p>
+        <p>Gana quien llegue primero a <strong>11 puntos</strong> con 2 de diferencia.</p>
+        <button id="start-btn">Jugar</button>
+      </div>
+
+      <div id="end-screen" class="overlay hidden">
+        <h1 id="end-title"></h1>
+        <p id="end-score"></p>
+        <button id="restart-btn">Jugar de nuevo</button>
+      </div>
+    </div>
+  </div>
+
+<script src="script.js"></script>
+</body>
+</html>
