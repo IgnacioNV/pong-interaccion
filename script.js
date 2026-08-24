@@ -25,8 +25,29 @@
   var WIN_SCORE = 11;
   var WIN_MARGIN = 2;
 
+  var BALL_VARIANTS = [
+    {
+      key: 'normal', name: 'Normal', icon: '●',
+      rx: 8, ry: 8, speedMult: 1, angleNoise: 0, color: '#f2f2f7'
+    },
+    {
+      key: 'grande', name: 'Grande', icon: '⬤',
+      rx: 17, ry: 17, speedMult: 0.78, angleNoise: 3 * Math.PI / 180, color: '#8be28b'
+    },
+    {
+      key: 'chica', name: 'Chica', icon: '•',
+      rx: 5, ry: 5, speedMult: 1.35, angleNoise: 18 * Math.PI / 180, color: '#ffe066'
+    },
+    {
+      key: 'ovalada', name: 'Ovalada', icon: '⬮',
+      rx: 15, ry: 7, speedMult: 1.08, angleNoise: 8 * Math.PI / 180, color: '#c792ea'
+    }
+  ];
+
   var playerScoreEl = document.getElementById('player-score');
   var cpuScoreEl = document.getElementById('cpu-score');
+  var ballIconEl = document.getElementById('ball-icon');
+  var ballNameEl = document.getElementById('ball-name');
   var startScreen = document.getElementById('start-screen');
   var endScreen = document.getElementById('end-screen');
   var endTitle = document.getElementById('end-title');
@@ -102,14 +123,25 @@
   }
 
   // ---- Ball ----
-  function makeBall(direction) {
+  function pickVariant() {
+    return BALL_VARIANTS[Math.floor(Math.random() * BALL_VARIANTS.length)];
+  }
+
+  function updateBallIndicator(variant) {
+    ballIconEl.textContent = variant.icon;
+    ballIconEl.style.color = variant.color;
+    ballNameEl.textContent = variant.name;
+  }
+
+  function makeBall(direction, variant) {
     var angle = (Math.random() * 0.6 - 0.3);
-    var speed = BASE_BALL_SPEED;
+    var speed = BASE_BALL_SPEED * variant.speedMult;
     return {
       x: WIDTH / 2,
       y: HEIGHT / 2,
-      rx: 8,
-      ry: 8,
+      rx: variant.rx,
+      ry: variant.ry,
+      variant: variant,
       vx: Math.cos(angle) * speed * direction,
       vy: Math.sin(angle) * speed
     };
@@ -117,15 +149,28 @@
 
   function resetBall() {
     var direction = Math.random() < 0.5 ? -1 : 1;
-    state.ball = makeBall(direction);
+    var variant = pickVariant();
+    updateBallIndicator(variant);
+    state.ball = makeBall(direction, variant);
   }
 
-  function paddleBounce(ball, paddle, paddleX, side) {
+  function paddleBounce(ball, paddle, paddleX, side, incomingVx, incomingVy) {
     // side: 1 = player paddle (front faces +x), -1 = cpu paddle (front faces -x)
     var relative = (ball.y - (paddle.y + PADDLE_H / 2)) / (PADDLE_H / 2);
     relative = clamp(relative, -1, 1);
     var angle = relative * MAX_BOUNCE_ANGLE;
-    var speed = Math.hypot(ball.vx, ball.vy) * PADDLE_HIT_SPEEDUP;
+    var variant = ball.variant;
+
+    if (variant.key === 'ovalada') {
+      var ratio = clamp(incomingVy / Math.max(Math.abs(incomingVx), 1), -2.5, 2.5);
+      angle += ratio * 0.18;
+    }
+    if (variant.angleNoise > 0) {
+      angle += (Math.random() * 2 - 1) * variant.angleNoise;
+    }
+    angle = clamp(angle, -Math.PI / 2 + 0.1, Math.PI / 2 - 0.1);
+
+    var speed = Math.hypot(incomingVx, incomingVy) * PADDLE_HIT_SPEEDUP;
     ball.vx = Math.cos(angle) * speed * side;
     ball.vy = Math.sin(angle) * speed;
   }
@@ -169,10 +214,13 @@
       ball.vy = -Math.abs(ball.vy);
     }
 
+    var incomingVx = ball.vx;
+    var incomingVy = ball.vy;
+
     if (ball.vx < 0 && sweptPaddleCheck(ball, prevX, prevY, state.player, PLAYER_X, 1)) {
-      paddleBounce(ball, state.player, PLAYER_X, 1);
+      paddleBounce(ball, state.player, PLAYER_X, 1, incomingVx, incomingVy);
     } else if (ball.vx > 0 && sweptPaddleCheck(ball, prevX, prevY, state.cpu, CPU_X, -1)) {
-      paddleBounce(ball, state.cpu, CPU_X, -1);
+      paddleBounce(ball, state.cpu, CPU_X, -1, incomingVx, incomingVy);
     }
 
     if (ball.x + ball.rx < 0) {
@@ -254,7 +302,7 @@
   }
 
   function drawBall(ball) {
-    ctx.fillStyle = '#f2f2f7';
+    ctx.fillStyle = ball.variant ? ball.variant.color : '#f2f2f7';
     ctx.beginPath();
     ctx.ellipse(ball.x, ball.y, ball.rx, ball.ry, 0, 0, Math.PI * 2);
     ctx.fill();
