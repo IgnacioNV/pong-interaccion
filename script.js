@@ -310,9 +310,18 @@
     return false;
   }
 
+  function popScore(el, value) {
+    if (el.textContent === String(value)) return;
+    el.textContent = value;
+    el.classList.remove('pop');
+    // eslint-disable-next-line no-unused-expressions
+    void el.offsetWidth; // restart animation
+    el.classList.add('pop');
+  }
+
   function updateScoreboard() {
-    playerScoreEl.textContent = state.player.score;
-    cpuScoreEl.textContent = state.cpu.score;
+    popScore(playerScoreEl, state.player.score);
+    popScore(cpuScoreEl, state.cpu.score);
   }
 
   // ---- Screens / flow ----
