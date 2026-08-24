@@ -29,6 +29,11 @@
   var FIRE_SPEED_MULT = 1.6;
   var FIRE_TRAIL_LENGTH = 14;
 
+  var STREAK_AURA_THRESHOLD = 3;
+  var STREAK_RESET_AT = 5;
+  var AURA_SPEED_MULT = 1.25;
+  var STREAK_DOTS = 5;
+
   var BALL_VARIANTS = [
     {
       key: 'normal', name: 'Normal', icon: '●',
@@ -64,6 +69,8 @@
       toastEl.classList.remove('show');
     }, 1600);
   }
+  var playerStreakEl = document.getElementById('player-streak');
+  var cpuStreakEl = document.getElementById('cpu-streak');
   var startScreen = document.getElementById('start-screen');
   var endScreen = document.getElementById('end-screen');
   var endTitle = document.getElementById('end-title');
@@ -77,14 +84,16 @@
 
   var state = {
     screen: 'start', // 'start' | 'playing' | 'end'
-    player: { y: HEIGHT / 2 - PADDLE_H / 2, score: 0 },
+    player: { y: HEIGHT / 2 - PADDLE_H / 2, score: 0, streak: 0 },
     cpu: {
       y: HEIGHT / 2 - PADDLE_H / 2,
       score: 0,
+      streak: 0,
       targetError: 0,
       errorTimer: 0
     },
-    ball: null
+    ball: null,
+    elapsed: 0
   };
 
   // ---- Input ----
@@ -191,6 +200,7 @@
     angle = clamp(angle, -Math.PI / 2 + 0.1, Math.PI / 2 - 0.1);
 
     var speed = Math.hypot(incomingVx, incomingVy) * PADDLE_HIT_SPEEDUP;
+    if (paddle.streak >= STREAK_AURA_THRESHOLD) speed *= AURA_SPEED_MULT;
     ball.vx = Math.cos(angle) * speed * side;
     ball.vy = Math.sin(angle) * speed;
   }
@@ -256,13 +266,34 @@
   }
 
   function awardPoint(who) {
+    var other = who === 'player' ? 'cpu' : 'player';
     var wasFire = !!(state.ball && state.ball.fire);
     state[who].score += wasFire ? 2 : 1;
+
+    state[who].streak += 1;
+    state[other].streak = 0;
+    if (state[who].streak >= STREAK_RESET_AT) state[who].streak = 0;
+
     updateScoreboard();
+    updateStreakUI();
     if (wasFire) showToast('¡PUNTO DOBLE!');
 
     if (checkWin()) return;
     resetBall();
+  }
+
+  function renderStreakDots(el, count, sideClass) {
+    el.innerHTML = '';
+    for (var i = 0; i < STREAK_DOTS; i++) {
+      var dot = document.createElement('span');
+      dot.className = 'streak-dot' + (i < count ? ' lit ' + sideClass : '');
+      el.appendChild(dot);
+    }
+  }
+
+  function updateStreakUI() {
+    renderStreakDots(playerStreakEl, state.player.streak, 'player-lit');
+    renderStreakDots(cpuStreakEl, state.cpu.streak, 'cpu-lit');
   }
 
   function checkWin() {
@@ -288,10 +319,13 @@
   function startGame() {
     state.player.score = 0;
     state.cpu.score = 0;
+    state.player.streak = 0;
+    state.cpu.streak = 0;
     state.player.y = HEIGHT / 2 - PADDLE_H / 2;
     state.cpu.y = HEIGHT / 2 - PADDLE_H / 2;
     state.cpu.errorTimer = 0;
     updateScoreboard();
+    updateStreakUI();
     resetBall();
     state.screen = 'playing';
     startScreen.classList.add('hidden');
@@ -323,9 +357,16 @@
     ctx.setLineDash([]);
   }
 
-  function drawPaddle(x, y, color) {
+  function drawPaddle(x, y, color, auraActive) {
+    ctx.save();
+    if (auraActive) {
+      var pulse = 0.5 + 0.5 * Math.sin(state.elapsed * 6);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10 + pulse * 16;
+    }
     ctx.fillStyle = color;
     ctx.fillRect(x, y, PADDLE_W, PADDLE_H);
+    ctx.restore();
   }
 
   function drawFireTrail(ball) {
@@ -362,8 +403,8 @@
 
   function render() {
     drawCourt();
-    drawPaddle(PLAYER_X, state.player.y, '#4ad6ff');
-    drawPaddle(CPU_X, state.cpu.y, '#ff5d73');
+    drawPaddle(PLAYER_X, state.player.y, '#4ad6ff', state.player.streak >= STREAK_AURA_THRESHOLD);
+    drawPaddle(CPU_X, state.cpu.y, '#ff5d73', state.cpu.streak >= STREAK_AURA_THRESHOLD);
     if (state.ball) drawBall(state.ball);
   }
 
@@ -374,6 +415,8 @@
     if (lastTime === null) lastTime = now;
     var dt = Math.min((now - lastTime) / 1000, 0.05);
     lastTime = now;
+
+    state.elapsed += dt;
 
     if (state.screen === 'playing') {
       updatePlayerPaddle(dt);
@@ -386,6 +429,7 @@
   }
 
   updateScoreboard();
+  updateStreakUI();
   render();
   requestAnimationFrame(frame);
 })();
