@@ -154,16 +154,18 @@ body {
 }
 
 #rally-timer {
-  font-size: 11px;
+  font-size: 26px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--dim);
+  color: var(--fg);
   letter-spacing: 1px;
   transition: color 0.2s;
+  line-height: 1;
 }
 
 #rally-timer.boost {
   color: #ffb347;
-  text-shadow: 0 0 8px rgba(255, 140, 20, 0.7);
+  text-shadow: 0 0 10px rgba(255, 140, 20, 0.8);
   animation: rally-pulse 0.6s ease-in-out infinite;
 }
 
@@ -334,7 +336,7 @@ body {
   }
 
   #rally-timer {
-    font-size: 10px;
+    font-size: 18px;
   }
 
   .difficulty-options {

@@ -37,7 +37,7 @@
   var AURA_SPEED_MULT = 1.25;
   var STREAK_DOTS = 5;
 
-  var RALLY_BOOST_TIME = 20;
+  var RALLY_FIRE_TIME = 10;
   var RALLY_BOOST_MULT = 1.3;
 
   var OVAL_SPIN_RATE = 0.09;
@@ -82,7 +82,12 @@
   });
 
   function updateRallyTimer() {
-    rallyTimerEl.textContent = '⏱ ' + Math.floor(state.rallyTime) + 's';
+    if (state.ball && state.ball.boosted) {
+      rallyTimerEl.textContent = '🔥 ¡Fuego!';
+      return;
+    }
+    var remaining = Math.max(0, RALLY_FIRE_TIME - state.rallyTime);
+    rallyTimerEl.textContent = '⏱ ' + Math.ceil(remaining) + 's';
   }
 
   function showToast(text) {
@@ -296,12 +301,16 @@
     }
 
     state.rallyTime += dt;
-    if (!ball.boosted && state.rallyTime >= RALLY_BOOST_TIME) {
+    if (!ball.boosted && state.rallyTime >= RALLY_FIRE_TIME) {
       ball.boosted = true;
       ball.vx *= RALLY_BOOST_MULT;
       ball.vy *= RALLY_BOOST_MULT;
+      if (!ball.fire) {
+        ball.fire = true;
+        updateBallIndicator(ball.variant, true);
+      }
       rallyTimerEl.classList.add('boost');
-      showToast('¡MÁS VELOCIDAD!');
+      showToast('¡LA PELOTA SE PRENDIÓ FUEGO!');
     }
     updateRallyTimer();
 
