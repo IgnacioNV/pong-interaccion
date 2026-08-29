@@ -3,6 +3,7 @@
 
   var canvas = document.getElementById('game');
   var ctx = canvas.getContext('2d');
+  var canvasWrapEl = document.getElementById('canvas-wrap');
 
   var WIDTH = 800;
   var HEIGHT = 500;
@@ -43,6 +44,8 @@
   var OVAL_SPIN_RATE = 0.09;
   var OVAL_WALL_CHAOS = 32 * Math.PI / 180;
 
+  var SERVE_COUNTDOWN = 3;
+
   var BALL_VARIANTS = [
     {
       key: 'normal', name: 'Normal', icon: '●',
@@ -61,6 +64,132 @@
       rx: 15, ry: 7, speedMult: 1.08, angleNoise: 24 * Math.PI / 180, color: '#c792ea'
     }
   ];
+
+  // ---- Audio (sintetizado, sin archivos externos) ----
+  var audioCtx = null;
+  var fireNoiseSource = null;
+  var fireLfo = null;
+  var fireGain = null;
+
+  function ensureAudioCtx() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playTone(opts) {
+    var ctxA = ensureAudioCtx();
+    if (!ctxA) return;
+    var start = ctxA.currentTime + (opts.delay || 0);
+    var dur = opts.duration || 0.12;
+    var osc = ctxA.createOscillator();
+    var gain = ctxA.createGain();
+    osc.type = opts.type || 'sine';
+    osc.frequency.setValueAtTime(opts.freq, start);
+    if (opts.freqEnd) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(opts.freqEnd, 1), start + dur);
+    }
+    var vol = opts.volume != null ? opts.volume : 0.2;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(vol, start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctxA.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  }
+
+  var WALL_SOUNDS = {
+    normal: { freq: 480, type: 'sine', duration: 0.07, volume: 0.18 },
+    grande: { freq: 220, type: 'sine', duration: 0.12, volume: 0.2 },
+    chica: { freq: 900, type: 'square', duration: 0.05, volume: 0.1 },
+    ovalada: { freq: 650, freqEnd: 320, type: 'triangle', duration: 0.1, volume: 0.16 }
+  };
+
+  function playWallSound(variantKey) {
+    playTone(WALL_SOUNDS[variantKey] || WALL_SOUNDS.normal);
+  }
+
+  function playPaddleSound() {
+    playTone({ freq: 300, freqEnd: 150, type: 'square', duration: 0.07, volume: 0.22 });
+  }
+
+  function playScoreSound(who) {
+    if (who === 'player') {
+      playTone({ freq: 523, type: 'sine', duration: 0.11, volume: 0.25 });
+      playTone({ freq: 784, type: 'sine', duration: 0.18, volume: 0.25, delay: 0.09 });
+    } else {
+      playTone({ freq: 392, type: 'triangle', duration: 0.13, volume: 0.25 });
+      playTone({ freq: 262, type: 'triangle', duration: 0.22, volume: 0.25, delay: 0.1 });
+    }
+  }
+
+  function playCountdownTick(isGo) {
+    playTone({
+      freq: isGo ? 700 : 440,
+      type: 'sine',
+      duration: isGo ? 0.18 : 0.09,
+      volume: 0.16
+    });
+  }
+
+  function startFireSound() {
+    var ctxA = ensureAudioCtx();
+    if (!ctxA || fireNoiseSource) return;
+
+    var bufferSize = 2 * ctxA.sampleRate;
+    var buffer = ctxA.createBuffer(1, bufferSize, ctxA.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    var noise = ctxA.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    var filter = ctxA.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 900;
+    filter.Q.value = 0.7;
+
+    var gain = ctxA.createGain();
+    gain.gain.value = 0.045;
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctxA.destination);
+    noise.start();
+
+    var lfo = ctxA.createOscillator();
+    lfo.frequency.value = 7;
+    var lfoGain = ctxA.createGain();
+    lfoGain.gain.value = 0.02;
+    lfo.connect(lfoGain);
+    lfoGain.connect(gain.gain);
+    lfo.start();
+
+    fireNoiseSource = noise;
+    fireLfo = lfo;
+    fireGain = gain;
+  }
+
+  function stopFireSound() {
+    if (fireNoiseSource) {
+      try { fireNoiseSource.stop(); } catch (e) { /* already stopped */ }
+      fireNoiseSource.disconnect();
+      fireNoiseSource = null;
+    }
+    if (fireLfo) {
+      try { fireLfo.stop(); } catch (e) { /* already stopped */ }
+      fireLfo.disconnect();
+      fireLfo = null;
+    }
+    if (fireGain) {
+      fireGain.disconnect();
+      fireGain = null;
+    }
+  }
 
   var playerScoreEl = document.getElementById('player-score');
   var cpuScoreEl = document.getElementById('cpu-score');
@@ -123,7 +252,9 @@
     },
     ball: null,
     elapsed: 0,
-    rallyTime: 0
+    rallyTime: 0,
+    countdownRemaining: 0,
+    countdownLastTick: 0
   };
 
   // ---- Input ----
@@ -293,6 +424,10 @@
       hitWall = true;
     }
 
+    if (hitWall) {
+      playWallSound(ball.variant.key);
+    }
+
     if (hitWall && ball.variant && ball.variant.key === 'ovalada') {
       var wallSpeed = Math.hypot(ball.vx, ball.vy);
       var wallAngle = Math.atan2(ball.vy, ball.vx) + (Math.random() * 2 - 1) * OVAL_WALL_CHAOS;
@@ -319,8 +454,10 @@
 
     if (ball.vx < 0 && sweptPaddleCheck(ball, prevX, prevY, state.player, PLAYER_X, 1)) {
       paddleBounce(ball, state.player, PLAYER_X, 1, incomingVx, incomingVy);
+      playPaddleSound();
     } else if (ball.vx > 0 && sweptPaddleCheck(ball, prevX, prevY, state.cpu, CPU_X, -1)) {
       paddleBounce(ball, state.cpu, CPU_X, -1, incomingVx, incomingVy);
+      playPaddleSound();
     }
 
     if (ball.x + ball.rx < 0) {
@@ -341,10 +478,18 @@
 
     updateScoreboard();
     updateStreakUI();
+    playScoreSound(who);
     if (wasFire) showToast('¡PUNTO DOBLE!');
 
     if (checkWin()) return;
+    startServe();
+  }
+
+  function startServe() {
     resetBall();
+    state.screen = 'countdown';
+    state.countdownRemaining = SERVE_COUNTDOWN;
+    state.countdownLastTick = SERVE_COUNTDOWN;
   }
 
   function renderStreakDots(el, count, sideClass) {
@@ -401,6 +546,7 @@
 
   // ---- Screens / flow ----
   function startGame() {
+    ensureAudioCtx();
     state.player.score = 0;
     state.cpu.score = 0;
     state.player.streak = 0;
@@ -410,10 +556,9 @@
     state.cpu.errorTimer = 0;
     updateScoreboard();
     updateStreakUI();
-    resetBall();
-    state.screen = 'playing';
     startScreen.classList.add('hidden');
     endScreen.classList.add('hidden');
+    startServe();
   }
 
   function endGame(winner) {
@@ -433,9 +578,20 @@
   restartBtn.addEventListener('click', showStartScreen);
 
   // ---- Rendering ----
+  function isBallOnFire() {
+    return !!(state.ball && state.ball.fire && (state.screen === 'playing' || state.screen === 'countdown'));
+  }
+
   function drawCourt() {
     ctx.fillStyle = '#05050a';
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    if (isBallOnFire()) {
+      var pulse = 0.5 + 0.5 * Math.sin(state.elapsed * 8);
+      ctx.strokeStyle = 'rgba(255, ' + Math.round(90 + pulse * 50) + ', 20, ' + (0.5 + pulse * 0.5) + ')';
+      ctx.lineWidth = 6 + pulse * 6;
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, WIDTH - ctx.lineWidth, HEIGHT - ctx.lineWidth);
+    }
 
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.setLineDash([10, 12]);
@@ -445,6 +601,25 @@
     ctx.lineTo(WIDTH / 2, HEIGHT);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  function drawCountdown() {
+    if (state.screen !== 'countdown') return;
+    var n = Math.max(1, Math.ceil(state.countdownRemaining));
+    var frac = state.countdownRemaining - (n - 1);
+    var scale = 0.85 + 0.35 * frac;
+
+    ctx.save();
+    ctx.translate(WIDTH / 2, HEIGHT / 2);
+    ctx.scale(scale, scale);
+    ctx.font = '900 130px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#4ad6ff';
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.fillText(String(n), 0, 0);
+    ctx.restore();
   }
 
   function drawPaddle(x, y, color, auraActive) {
@@ -497,6 +672,7 @@
     drawPaddle(PLAYER_X, state.player.y, '#4ad6ff', state.player.streak >= STREAK_AURA_THRESHOLD);
     drawPaddle(CPU_X, state.cpu.y, '#ff5d73', state.cpu.streak >= STREAK_AURA_THRESHOLD);
     if (state.ball) drawBall(state.ball);
+    drawCountdown();
   }
 
   // ---- Main loop ----
@@ -509,10 +685,31 @@
 
     state.elapsed += dt;
 
-    if (state.screen === 'playing') {
+    if (state.screen === 'countdown') {
+      updatePlayerPaddle(dt);
+      updateCpuPaddle(dt);
+      state.countdownRemaining -= dt;
+      var currentTick = Math.ceil(state.countdownRemaining);
+      if (currentTick !== state.countdownLastTick && currentTick >= 0) {
+        state.countdownLastTick = currentTick;
+        if (currentTick > 0) playCountdownTick(false);
+      }
+      if (state.countdownRemaining <= 0) {
+        state.screen = 'playing';
+        playCountdownTick(true);
+      }
+    } else if (state.screen === 'playing') {
       updatePlayerPaddle(dt);
       updateCpuPaddle(dt);
       updateBall(dt);
+    }
+
+    if (isBallOnFire()) {
+      canvasWrapEl.classList.add('fire-active');
+      startFireSound();
+    } else {
+      canvasWrapEl.classList.remove('fire-active');
+      stopFireSound();
     }
 
     render();

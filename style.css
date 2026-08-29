@@ -198,6 +198,20 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   cursor: none;
+  transition: border-color 0.2s;
+}
+
+#canvas-wrap.fire-active #game {
+  border-color: #ff5522;
+}
+
+#canvas-wrap.fire-active {
+  animation: court-fire-glow 0.55s ease-in-out infinite;
+}
+
+@keyframes court-fire-glow {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(255, 90, 30, 0.35)); }
+  50% { filter: drop-shadow(0 0 24px rgba(255, 90, 30, 0.9)); }
 }
 
 .overlay {
@@ -253,26 +267,34 @@ body {
 }
 
 .difficulty-btn {
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #d0d0dc;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #05050a;
+  background: var(--diff-color);
+  border: 2px solid transparent;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  opacity: 0.55;
+  transform: scale(0.96);
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 
+.difficulty-btn[data-difficulty="facil"] { --diff-color: #a9e2ff; }
+.difficulty-btn[data-difficulty="normal"] { --diff-color: #4ad6ff; }
+.difficulty-btn[data-difficulty="dificil"] { --diff-color: #1e6fd9; }
+.difficulty-btn[data-difficulty="dificil"] { color: #f2f7ff; }
+
 .difficulty-btn:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  opacity: 0.8;
 }
 
 .difficulty-btn.active {
-  color: #05050a;
-  background: var(--accent);
-  border-color: var(--accent);
-  box-shadow: 0 0 12px rgba(74, 214, 255, 0.5);
+  opacity: 1;
+  transform: scale(1);
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 14px var(--diff-color);
 }
 
 .overlay button:not(.difficulty-btn) {
