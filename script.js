@@ -67,9 +67,8 @@
 
   // ---- Audio (sintetizado, sin archivos externos) ----
   var audioCtx = null;
-  var fireNoiseSource = null;
-  var fireLfo = null;
-  var fireGain = null;
+  var fireBeatTimer = null;
+  var fireStartTime = 0;
 
   function ensureAudioCtx() {
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -135,59 +134,47 @@
     });
   }
 
+  function playThump(start, freq, dur, vol) {
+    var ctxA = ensureAudioCtx();
+    if (!ctxA) return;
+    var osc = ctxA.createOscillator();
+    var gain = ctxA.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, start);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(freq * 0.6, 1), start + dur);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(vol, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctxA.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  }
+
+  function scheduleFireBeat() {
+    var ctxA = ensureAudioCtx();
+    if (!ctxA) return;
+    var now = ctxA.currentTime;
+    // "Lub-dub" de latido: dos golpes graves cercanos entre si.
+    playThump(now, 95, 0.09, 0.24);
+    playThump(now + 0.13, 70, 0.11, 0.17);
+
+    var age = now - fireStartTime;
+    var interval = Math.max(0.62 - age * 0.045, 0.22); // se acelera con el tiempo
+    fireBeatTimer = setTimeout(scheduleFireBeat, interval * 1000);
+  }
+
   function startFireSound() {
     var ctxA = ensureAudioCtx();
-    if (!ctxA || fireNoiseSource) return;
-
-    var bufferSize = 2 * ctxA.sampleRate;
-    var buffer = ctxA.createBuffer(1, bufferSize, ctxA.sampleRate);
-    var data = buffer.getChannelData(0);
-    for (var i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-
-    var noise = ctxA.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
-
-    var filter = ctxA.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 0.7;
-
-    var gain = ctxA.createGain();
-    gain.gain.value = 0.045;
-
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctxA.destination);
-    noise.start();
-
-    var lfo = ctxA.createOscillator();
-    lfo.frequency.value = 7;
-    var lfoGain = ctxA.createGain();
-    lfoGain.gain.value = 0.02;
-    lfo.connect(lfoGain);
-    lfoGain.connect(gain.gain);
-    lfo.start();
-
-    fireNoiseSource = noise;
-    fireLfo = lfo;
-    fireGain = gain;
+    if (!ctxA || fireBeatTimer) return;
+    fireStartTime = ctxA.currentTime;
+    scheduleFireBeat();
   }
 
   function stopFireSound() {
-    if (fireNoiseSource) {
-      try { fireNoiseSource.stop(); } catch (e) { /* already stopped */ }
-      fireNoiseSource.disconnect();
-      fireNoiseSource = null;
-    }
-    if (fireLfo) {
-      try { fireLfo.stop(); } catch (e) { /* already stopped */ }
-      fireLfo.disconnect();
-      fireLfo = null;
-    }
-    if (fireGain) {
-      fireGain.disconnect();
-      fireGain = null;
+    if (fireBeatTimer) {
+      clearTimeout(fireBeatTimer);
+      fireBeatTimer = null;
     }
   }
 
@@ -331,6 +318,7 @@
       ry: variant.ry,
       variant: variant,
       fire: fire,
+      doublePoint: fire,
       trail: [],
       spinAngle: 0,
       boosted: false,
@@ -440,12 +428,14 @@
       ball.boosted = true;
       ball.vx *= RALLY_BOOST_MULT;
       ball.vy *= RALLY_BOOST_MULT;
+      rallyTimerEl.classList.add('boost');
       if (!ball.fire) {
         ball.fire = true;
         updateBallIndicator(ball.variant, true);
+        showToast('¡LA PELOTA SE PRENDIÓ FUEGO!');
+      } else {
+        showToast('¡MÁS VELOCIDAD!');
       }
-      rallyTimerEl.classList.add('boost');
-      showToast('¡LA PELOTA SE PRENDIÓ FUEGO!');
     }
     updateRallyTimer();
 
@@ -469,8 +459,8 @@
 
   function awardPoint(who) {
     var other = who === 'player' ? 'cpu' : 'player';
-    var wasFire = !!(state.ball && state.ball.fire);
-    state[who].score += wasFire ? 2 : 1;
+    var isDouble = !!(state.ball && state.ball.doublePoint);
+    state[who].score += isDouble ? 2 : 1;
 
     state[who].streak += 1;
     state[other].streak = 0;
@@ -479,7 +469,7 @@
     updateScoreboard();
     updateStreakUI();
     playScoreSound(who);
-    if (wasFire) showToast('¡PUNTO DOBLE!');
+    if (isDouble) showToast('¡PUNTO DOBLE!');
 
     if (checkWin()) return;
     startServe();
@@ -490,6 +480,9 @@
     state.screen = 'countdown';
     state.countdownRemaining = SERVE_COUNTDOWN;
     state.countdownLastTick = SERVE_COUNTDOWN;
+    if (state.ball.doublePoint) {
+      showToast('¡OJO, PUNTO DOBLE EN JUEGO!');
+    }
   }
 
   function renderStreakDots(el, count, sideClass) {
